@@ -1,41 +1,34 @@
-from sqlalchemy import text
-import pandas as pd
-from sqlalchemy import create_engine
+"""Необязательная работа с PostgreSQL/PostGIS, без паролей в исходном коде.
 
-def load_to_postgis(df, df_name):
-    print(df)
-    engine = create_engine('postgresql://gis:123456@10.0.62.59:55432/gis')
+Совместимое имя файла postgres.py оставлено для пользователей прежней версии.
+Для публикации на GitHub задавайте адрес БД только через EARTHQUAKE_DB_URL.
+"""
+from __future__ import annotations
+import os
 
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS earthquakes_GR_low.test_table (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100),
-        value FLOAT
-    );
-    """
+
+def make_engine():
+    """Создать соединение, только когда оно действительно необходимо."""
+    from sqlalchemy import create_engine
+    url=os.getenv('EARTHQUAKE_DB_URL')
+    if not url:
+        raise RuntimeError('Не задан EARTHQUAKE_DB_URL. См. .env.example')
+    return create_engine(url,pool_pre_ping=True)
+
+
+def load_to_postgres(df, table_name: str, schema: str='earthquakes_gr_low'):
+    """Добавить таблицу pandas в существующую схему PostgreSQL."""
+    engine=make_engine()
     try:
-        with engine.connect() as conn:
-            conn.execute(text(create_table_sql))
-            conn.commit()
-
-        df.to_postgis(
-            df_name,
-            engine,
-            schema='earthquakes_GR_low',
-            if_exists='append',
-            index=False,
-        )
-        print(f"[{df_name}] Records created successfully")
-    except Exception as ex:
-        print("Operation failed: {0}".format(ex))
+        df.to_sql(table_name,engine,schema=schema,if_exists='append',index=False)
+    finally:
+        engine.dispose()
 
 
-data = {
-    "name": ["point1", "point2"],
-    "value": [10.5, 20.7]
-}
-
-df = pd.DataFrame(data)
-df_name = "test_table"
-
-load_to_postgis(df, df_name)
+def load_to_postgis(df, table_name: str, schema: str='earthquakes_gr_low'):
+    """Добавить GeoDataFrame с геометрией в существующую таблицу PostGIS."""
+    engine=make_engine()
+    try:
+        df.to_postgis(table_name,engine,schema=schema,if_exists='append',index=False)
+    finally:
+        engine.dispose()
